@@ -8,6 +8,7 @@ import tornado.ioloop
 import tornado.web
 import threading
 import time
+import json
 
 from tailer import tail, follow
 import config
@@ -26,14 +27,13 @@ class ListenersThread(threading.Thread):
     def run(self):
         while not self.end_loop:
             time.sleep(1)
-            for service in listeners:
+            for service in service_clients:
                 if listeners[service]:
                     f_follow = follow(open(config.services[service]['path_log']))
 
                     for line in f_follow:
                         for client in listeners[service]:
                             client.write_message(line)
-
 
                         if not listeners[service]:
                             f_follow.close()
@@ -42,7 +42,6 @@ class ListenersThread(threading.Thread):
 
 class GetHandler(tornado.web.RequestHandler):
 
-    
     def __init__(self, application, request, **kwargs):
         super(GetHandler, self).__init__(application, request, **kwargs)
         self.add_header('Access-Control-Allow-Origin', '*')
@@ -53,7 +52,11 @@ class GetHandler(tornado.web.RequestHandler):
         identify = self.request.arguments.get('identify', [None])[0]
         srvs = self.request.arguments.get('srvs', [None])[0]
         cmds = self.request.arguments.get('cmds', [None])[0]
-        message = 'Error'
+
+        if cmds == 'get-list':
+            self.set_header('Content-Type', 'application/json; charset=UTF-8')
+            self.write(self.get_list_service())
+        
 
         if srvs in service_clients and identify and \
             not(identify in service_clients.get(srvs)):
@@ -62,28 +65,32 @@ class GetHandler(tornado.web.RequestHandler):
             if identify in service_clients['init']:
                 client = {identify: service_clients['init'].pop(identify)}
                 service_clients[srvs].update(client)
-                print('=== New Client', client)
-
-                # here send new_client log initial of service.
+                # print('=== New Client', client)
 
             else:
                 # Small service_clients
                 s = {k: v for k, v in service_clients.items() if not k in (srvs, 'init')}
+
                 for service in s.keys():
                     if identify in s[service]:
                         client = {identify: s[service].pop(identify)}
                         service_clients[srvs].update(client)
-                        print('=== Change Client', client)
+                        # print('=== Change Client', client)
                         break
 
             self.first_read_log(srvs, client[identify])
 
 
     def first_read_log(self, service, socket):
-        ''' First read of log '''
-        
+        ''' First read of log '''       
         with open(config.services[service]['path_log'], 'r') as first_read:
                 socket.write_message('\n'.join(first_read))
+
+
+    def get_list_service(self):
+        list_services = [key for key in config.services.keys()]
+        return json.dumps(list_services)
+
 
 
 class RealtimeHandler(tornado.websocket.WebSocketHandler):
@@ -91,7 +98,7 @@ class RealtimeHandler(tornado.websocket.WebSocketHandler):
         self.identify = username
         init_client = {self.identify: self}
         service_clients['init'].update(init_client)
-        print('=== Connect User: %s' % self.identify)
+        # print('=== Connect User: %s' % self.identify)  // Definir logger
 
     def on_message(self, service):
         ''' receivd message from client '''
@@ -106,7 +113,7 @@ class RealtimeHandler(tornado.websocket.WebSocketHandler):
             for identify, socket in service_clients[service].items():
                 if self == socket:
                     del service_clients[service][identify]
-                    print('=== Closed!')
+                    # print('=== Closed!')  // Definir logger
                     break
 
 
