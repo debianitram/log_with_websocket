@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 #-*- encoding:utf-8 -*-
-
 # debianitram (at) gmail.com
 
 import tornado.httpserver
@@ -8,57 +7,108 @@ import tornado.websocket
 import tornado.ioloop
 import tornado.web
 import threading
+import time
+
 from tailer import tail, follow
+import config
 
 
-listeners = []
+service_clients = {key: {} for key in config.services.keys()}
+service_clients.update(init={})
 
 
-class TailThread(threading.Thread):
+class ListenersThread(threading.Thread):
     def __init__(self):
-        super(TailThread, self).__init__()
+        super(ListenersThread, self).__init__()
         self.name == self.__class__.__name__
         self.end_loop = False
-        self.filename = 'log.log'
 
     def run(self):
         while not self.end_loop:
-            if listeners:
-                f_follow = follow(open(self.filename))
-                for l in f_follow:
-                    for c in listeners:
-                        print('Client: %s - Text: %s' % (c, l))
-                        c.write_message(l)
+            time.sleep(1)
+            for service in listeners:
+                if listeners[service]:
+                    f_follow = follow(open(config.services[service]['path_log']))
 
-                    if not listeners:
-                        f_follow.close()
-                        break
+                    for line in f_follow:
+                        for client in listeners[service]:
+                            client.write_message(line)
+
+
+                        if not listeners[service]:
+                            f_follow.close()
+                            break
 
 
 class GetHandler(tornado.web.RequestHandler):
-    def get(self):
-        if self.request.arguments.get('message'):
-            message = self.request.arguments.get('message')[0]
-        else:
-            message = 'No send message'
 
-        print('Message: ', message)
-        for client in listeners:
-            client.write_message(message)
+    
+    def __init__(self, application, request, **kwargs):
+        super(GetHandler, self).__init__(application, request, **kwargs)
+        self.add_header('Access-Control-Allow-Origin', '*')
+    
+
+    def get(self):
+
+        identify = self.request.arguments.get('identify', [None])[0]
+        srvs = self.request.arguments.get('srvs', [None])[0]
+        cmds = self.request.arguments.get('cmds', [None])[0]
+        message = 'Error'
+
+        if srvs in service_clients and identify and \
+            not(identify in service_clients.get(srvs)):
+
+            # If new connection.
+            if identify in service_clients['init']:
+                client = {identify: service_clients['init'].pop(identify)}
+                service_clients[srvs].update(client)
+                print('=== New Client', client)
+
+                # here send new_client log initial of service.
+
+            else:
+                # Small service_clients
+                s = {k: v for k, v in service_clients.items() if not k in (srvs, 'init')}
+                for service in s.keys():
+                    if identify in s[service]:
+                        client = {identify: s[service].pop(identify)}
+                        service_clients[srvs].update(client)
+                        print('=== Change Client', client)
+                        break
+
+            self.first_read_log(srvs, client[identify])
+
+
+    def first_read_log(self, service, socket):
+        ''' First read of log '''
+        
+        with open(config.services[service]['path_log'], 'r') as first_read:
+                socket.write_message('\n'.join(first_read))
 
 
 class RealtimeHandler(tornado.websocket.WebSocketHandler):
-    def open(self, params):
-        print('Connected')
-        print('Params: %s' % params) # Type of params is unicode
-        listeners.append(self)
+    def open(self, username):
+        self.identify = username
+        init_client = {self.identify: self}
+        service_clients['init'].update(init_client)
+        print('=== Connect User: %s' % self.identify)
 
-    def on_message(self, message):
+    def on_message(self, service):
+        ''' receivd message from client '''
         pass
 
+    def check_origin(self, origin):
+        ''' Accept connection from 0.0.0.0/0'''
+        return True
+
     def on_close(self):
-        print('Close')
-        listeners.remove(self)
+        for service in service_clients.keys():
+            for identify, socket in service_clients[service].items():
+                if self == socket:
+                    del service_clients[service][identify]
+                    print('=== Closed!')
+                    break
+
 
 
 if __name__ == '__main__':
@@ -67,10 +117,13 @@ if __name__ == '__main__':
             (r'/realtime/(.*)', RealtimeHandler)
     ]
 
-    tail_thread = TailThread()
-    tail_thread.start()  # Run thread! 
-    
-    application = tornado.web.Application(urls, auto_reload=True)
-    http_server = tornado.httpserver.HTTPServer(application)
-    http_server.listen(8080, address="0.0.0.0")
-    tornado.ioloop.IOLoop.instance().start()
+    try:
+        # listeners_thread = ListenersThread()
+        # listeners_thread.start()  # Run thread!
+
+        application = tornado.web.Application(urls, auto_reload=True)
+        http_server = tornado.httpserver.HTTPServer(application)
+        http_server.listen(8080, address="0.0.0.0")
+        tornado.ioloop.IOLoop.instance().start()
+    except KeyboardInterrupt:
+        raise
