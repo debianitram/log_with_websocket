@@ -10,7 +10,7 @@ import threading
 import time
 import json
 
-from tailer import tail, follow
+from tailer import head, follow
 import config
 
 
@@ -27,17 +27,21 @@ class ListenersThread(threading.Thread):
     def run(self):
         while not self.end_loop:
             time.sleep(1)
-            for service in service_clients:
-                if listeners[service]:
+            for service in service_clients.keys():
+
+                # Ignore Init
+                if service == 'init':
+                    continue
+                
+                if service_clients[service]:
                     f_follow = follow(open(config.services[service]['path_log']))
-
                     for line in f_follow:
-                        for client in listeners[service]:
-                            client.write_message(line)
+                        for socket in service_clients[service].values():
+                            socket.write_message(line)
 
-                        if not listeners[service]:
+                        if not service_clients[service]:
                             f_follow.close()
-                            break
+
 
 
 class GetHandler(tornado.web.RequestHandler):
@@ -83,8 +87,8 @@ class GetHandler(tornado.web.RequestHandler):
 
     def first_read_log(self, service, socket):
         ''' First read of log '''       
-        with open(config.services[service]['path_log'], 'r') as first_read:
-                socket.write_message('\n'.join(first_read))
+        first_read = head(open(config.services[service]['path_log']), 50)
+        socket.write_message('\n'.join(first_read))
 
 
     def get_list_service(self):
@@ -125,8 +129,8 @@ if __name__ == '__main__':
     ]
 
     try:
-        # listeners_thread = ListenersThread()
-        # listeners_thread.start()  # Run thread!
+        listeners_thread = ListenersThread()
+        listeners_thread.start()  # Run thread!
 
         application = tornado.web.Application(urls, auto_reload=True)
         http_server = tornado.httpserver.HTTPServer(application)
