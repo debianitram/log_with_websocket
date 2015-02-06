@@ -4,6 +4,9 @@
 
 
 
+# First Read Lines
+first_read_lines = 50
+
 services = {
             'apache2': {'commands': ['restart', 'start', 'stop'],
                         'path_log': '/var/log/apache2/access.log',

@@ -87,7 +87,8 @@ class GetHandler(tornado.web.RequestHandler):
 
     def first_read_log(self, service, socket):
         ''' First read of log '''       
-        first_read = head(open(config.services[service]['path_log']), 50)
+        first_read = head(open(config.services[service]['path_log']),
+                          config.first_read_lines)
         socket.write_message('\n'.join(first_read))
 
 
@@ -102,7 +103,7 @@ class RealtimeHandler(tornado.websocket.WebSocketHandler):
         self.identify = username
         init_client = {self.identify: self}
         service_clients['init'].update(init_client)
-        # print('=== Connect User: %s' % self.identify)  // Definir logger
+        # print('=== Connect User: %s' % self.identify)  // define logger
 
     def on_message(self, service):
         ''' receivd message from client '''
@@ -117,7 +118,7 @@ class RealtimeHandler(tornado.websocket.WebSocketHandler):
             for identify, socket in service_clients[service].items():
                 if self == socket:
                     del service_clients[service][identify]
-                    # print('=== Closed!')  // Definir logger
+                    # print('=== Closed!')  // define logger
                     break
 
 
