@@ -10,7 +10,7 @@ import threading
 import time
 import json
 
-from tailer import head, follow
+from tailer import tail, follow
 import config
 
 
@@ -87,7 +87,7 @@ class GetHandler(tornado.web.RequestHandler):
 
     def first_read_log(self, service, socket):
         ''' First read of log '''       
-        first_read = head(open(config.services[service]['path_log']),
+        first_read = tail(open(config.services[service]['path_log']),
                           config.first_read_lines)
         socket.write_message('\n'.join(first_read))
 
@@ -135,7 +135,7 @@ if __name__ == '__main__':
 
         application = tornado.web.Application(urls, auto_reload=True)
         http_server = tornado.httpserver.HTTPServer(application)
-        http_server.listen(8080, address="0.0.0.0")
+        http_server.listen(8797, address="0.0.0.0")
         tornado.ioloop.IOLoop.instance().start()
     except KeyboardInterrupt:
         raise
