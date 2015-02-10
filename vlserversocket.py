@@ -19,28 +19,24 @@ service_clients.update(init={})
 
 
 class ListenersThread(threading.Thread):
-    def __init__(self):
+    def __init__(self, name):
         super(ListenersThread, self).__init__()
-        self.name == self.__class__.__name__
+        self.service = name
+        self.file_follow = follow(open(config.services[self.service]['path_log']))
         self.end_loop = False
 
     def run(self):
         while not self.end_loop:
             time.sleep(1)
-            for service in service_clients.keys():
+            
+            if service_clients[self.service]:
+                for line in self.file_follow:
+                    for socket in service_clients[self.service].values():
+                        socket.write_message(line)
 
-                # Ignore Init
-                if service == 'init':
-                    continue
-                
-                if service_clients[service]:
-                    f_follow = follow(open(config.services[service]['path_log']))
-                    for line in f_follow:
-                        for socket in service_clients[service].values():
-                            socket.write_message(line)
-
-                        if not service_clients[service]:
-                            f_follow.close()
+                    if not service_clients[self.service]:
+                        # f_follow.close()
+                        break
 
 
 
@@ -69,7 +65,7 @@ class GetHandler(tornado.web.RequestHandler):
             if identify in service_clients['init']:
                 client = {identify: service_clients['init'].pop(identify)}
                 service_clients[srvs].update(client)
-                # print('=== New Client', client)
+                print('=== New Client', client)
 
             else:
                 # Small service_clients
@@ -79,7 +75,7 @@ class GetHandler(tornado.web.RequestHandler):
                     if identify in s[service]:
                         client = {identify: s[service].pop(identify)}
                         service_clients[srvs].update(client)
-                        # print('=== Change Client', client)
+                        print('=== Change Client', client)
                         break
 
             self.first_read_log(srvs, client[identify])
@@ -103,7 +99,7 @@ class RealtimeHandler(tornado.websocket.WebSocketHandler):
         self.identify = username
         init_client = {self.identify: self}
         service_clients['init'].update(init_client)
-        # print('=== Connect User: %s' % self.identify)  // define logger
+        print('=== Connect User: %s' % self.identify)
 
     def on_message(self, service):
         ''' receivd message from client '''
@@ -118,7 +114,7 @@ class RealtimeHandler(tornado.websocket.WebSocketHandler):
             for identify, socket in service_clients[service].items():
                 if self == socket:
                     del service_clients[service][identify]
-                    # print('=== Closed!')  // define logger
+                    print('=== Closed!')
                     break
 
 
@@ -130,8 +126,15 @@ if __name__ == '__main__':
     ]
 
     try:
-        listeners_thread = ListenersThread()
-        listeners_thread.start()  # Run thread!
+        for service in service_clients.keys():
+
+                # Ignore Init
+            if service == 'init':
+                continue
+
+            ListenersThread(service).start()
+            print('===Thread %s' % service)
+
 
         application = tornado.web.Application(urls, auto_reload=True)
         http_server = tornado.httpserver.HTTPServer(application)
