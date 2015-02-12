@@ -65,6 +65,9 @@ class GetHandler(tornado.web.RequestHandler):
             if identify in service_clients['init']:
                 client = {identify: service_clients['init'].pop(identify)}
                 service_clients[srvs].update(client)
+
+                self.first_read_log(srvs, client[identify])
+                
                 print('=== New Client', client)
 
             else:
@@ -75,10 +78,13 @@ class GetHandler(tornado.web.RequestHandler):
                     if identify in s[service]:
                         client = {identify: s[service].pop(identify)}
                         service_clients[srvs].update(client)
+
+                        self.first_read_log(srvs, client[identify])
+                        
                         print('=== Change Client', client)
                         break
 
-            self.first_read_log(srvs, client[identify])
+            
 
 
     def first_read_log(self, service, socket):
